@@ -1,4 +1,4 @@
-/* OpenSprinkler Unified (AVR/RPI/BBB/LINUX/ESP8266) Firmware
+/* OpenSprinkler Unified Firmware
  * Copyright (C) 2015 by Ray Wang (ray@opensprinkler.com)
  *
  * OpenSprinkler library
@@ -110,7 +110,6 @@ boolean checkPassword(char* pw) {
 	if (os.iopts[IOPT_IGNORE_PASSWORD])  return true;
 
 	if(findKeyVal(pw, tmp_buffer, TMP_BUFFER_SIZE, PSTR("pw"), true)){
-		urlDecode(tmp_buffer);
 		if (os.password_verify(tmp_buffer)) return true;
 	}else{
 		DEBUG_LOGF("Device password not found.\r\n");
@@ -230,7 +229,7 @@ void manualRun(char *message){
 }
 
 //handles /mp command
-void manual_start_program(unsigned char, unsigned char);
+void manual_start_program(unsigned char, unsigned char, unsigned char);
 void programStart(char *message){
 	if(!findKeyVal(message, tmp_buffer, TMP_BUFFER_SIZE, PSTR("pid"), true)){
 		DEBUG_LOGF("Program ID missing.\r\n")
@@ -247,9 +246,18 @@ void programStart(char *message){
 		if(tmp_buffer[0]=='1') uwt = 1;
 	}
 
-	reset_all_stations_immediate();
+	unsigned char qo = QUEUE_OPTION_REPLACE;
+	if (findKeyVal(message, tmp_buffer, TMP_BUFFER_SIZE, PSTR("qo"), true)) {
+		qo=(unsigned char)atoi(tmp_buffer);
+	}
 
-	manual_start_program(pid+1, uwt);
+	if (qo == QUEUE_OPTION_REPLACE) {
+		// reset all stations and clear queue
+		reset_all_stations_immediate();
+	}
+
+	manual_start_program(pid+1, uwt, qo);
+
 	return;
 }
 
@@ -269,13 +277,25 @@ void runOnceProgram(char *message){
 	}
 	pv+=3;
 
-	reset_all_stations_immediate();
-
 	unsigned char sid, bid, s;
 	uint16_t dur;
 	boolean match_found = false;
+	unsigned char wl = 100;
+	if(findKeyVal(message,tmp_buffer,TMP_BUFFER_SIZE,PSTR("uwt"),true)){
+		if(tmp_buffer[0]=='1') wl = os.iopts[IOPT_WATER_PERCENTAGE];
+	}
+
+	unsigned char qo = QUEUE_OPTION_REPLACE;
+	if (findKeyVal(message, tmp_buffer, TMP_BUFFER_SIZE, PSTR("qo"), true)) {
+		qo=(unsigned char)atoi(tmp_buffer);
+	}
+	if (qo == QUEUE_OPTION_REPLACE) {
+		// reset all stations and clear queue
+		reset_all_stations_immediate();
+	}
+
 	for(sid = 0; sid < os.nstations; sid++){
-		dur = parse_listdata(&pv);
+		dur = parse_listdata(&pv)*wl/100;
 		bid = sid >> 3;
 		s = sid&0x07;
 
@@ -291,7 +311,7 @@ void runOnceProgram(char *message){
 		}
 	}
 	if(match_found){
-		schedule_all_stations(os.now_tz());
+		schedule_all_stations(os.now_tz(), qo);
 		return;
 	}
 	return;
@@ -376,7 +396,6 @@ void OSMqtt::begin(void) {
 
 	if(_sub_topic[0] == 0) { // subscribe topic is empty
 		DEBUG_LOGF("No sub_topic found\r\n");
-		// TODO: do not subscribe then
 	}
 
 	DEBUG_LOGF("MQTT Begin: Config (%s:%d %s) %s\r\n", _host, _port, _username, _enabled ? "Enabled" : "Disabled");
@@ -430,6 +449,7 @@ void OSMqtt::loop(void) {
 	// Only attemp to reconnect every MQTT_RECONNECT_DELAY seconds to avoid blocking the main loop
 	if (!_connected() && (millis() - last_reconnect_attempt >= MQTT_RECONNECT_DELAY * 1000UL)) {
 		DEBUG_LOGF("MQTT Loop: Reconnecting\r\n");
+		_done_subscribed = false;
 		_connect();
 		last_reconnect_attempt = millis();
 	}
@@ -537,7 +557,7 @@ int OSMqtt::_publish(const char *topic, const char *payload) {
 	return MQTT_SUCCESS;
 }
 
-void subscribe_callback(const char *topic, unsigned char *payload, unsigned int length) {
+void subscribe_callback(char *topic, unsigned char *payload, unsigned int length) {
 	DEBUG_LOGF("Subscribe Callback\r\n");
 	payload[length] = 0; // properly end the message
 	char* message = (char*)payload;
@@ -592,7 +612,7 @@ const char * OSMqtt::_state_string(int rc) {
 }
 #else
 
-/************************** RASPBERRY PI / BBB / DEMO ****************************************/
+/************************** RASPBERRY PI / Linux ****************************************/
 
 static bool _connected = false;
 

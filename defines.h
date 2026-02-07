@@ -1,4 +1,4 @@
-/* OpenSprinkler Unified (AVR/RPI/BBB/LINUX/ESP8266) Firmware
+/* OpenSprinkler Unified Firmware
  * Copyright (C) 2015 by Ray Wang (ray@opensprinkler.com)
  *
  * OpenSprinkler macro defines and hardware pin assignments
@@ -24,7 +24,7 @@
 #ifndef _DEFINES_H
 #define _DEFINES_H
 
-// #define ENABLE_DEBUG  // enable serial debug
+//#define ENABLE_DEBUG  // enable serial debug
 
 typedef unsigned long ulong;
 
@@ -35,12 +35,11 @@ typedef unsigned long ulong;
 														// if this number is different from the one stored in non-volatile memory
 														// a device reset will be automatically triggered
 
-#define OS_FW_MINOR      0  // Firmware minor version
+#define OS_FW_MINOR      4  // Firmware minor version
 
 /** Hardware version base numbers */
 #define OS_HW_VERSION_BASE   0x00 // OpenSprinkler
 #define OSPI_HW_VERSION_BASE 0x40 // OpenSprinkler Pi
-#define OSBO_HW_VERSION_BASE 0x80 // OpenSprinkler Beagle
 #define SIM_HW_VERSION_BASE  0xC0 // simulation hardware
 
 /** Hardware type macro defines */
@@ -77,13 +76,28 @@ typedef unsigned long ulong;
 #define NOTIFY_SENSOR2         0x0040
 #define NOTIFY_RAINDELAY       0x0080
 #define NOTIFY_STATION_ON      0x0100
+#define NOTIFY_FLOW_ALERT      0x0200
+#define NOTIFY_CURR_ALERT      0x0400
+
+/** Queue Insertion Mode */
+enum {
+	QUEUE_OPTION_APPEND = 0,
+	QUEUE_OPTION_INSERT_FRONT,
+	QUEUE_OPTION_REPLACE
+};
+
+enum {
+	CURR_ALERT_TYPE_UNDER = 0,		// undercurrent when running a station
+	CURR_ALERT_TYPE_OVER_STATION,	// overcurrent when turning on a station
+	CURR_ALERT_TYPE_OVER_SYSTEM		// overcurrent while system is running
+};
 
 /** HTTP request macro defines */
 #define HTTP_RQT_SUCCESS       0
-#define HTTP_RQT_NOT_RECEIVED  1
-#define HTTP_RQT_CONNECT_ERR   2
-#define HTTP_RQT_TIMEOUT       3
-#define HTTP_RQT_EMPTY_RETURN  4
+#define HTTP_RQT_NOT_RECEIVED  -1
+#define HTTP_RQT_CONNECT_ERR   -2
+#define HTTP_RQT_TIMEOUT       -3
+#define HTTP_RQT_EMPTY_RETURN  -4
 
 /** Sensor macro defines */
 #define SENSOR_TYPE_NONE    0x00
@@ -93,7 +107,7 @@ typedef unsigned long ulong;
 #define SENSOR_TYPE_PSWITCH 0xF0  // program switch sensor
 #define SENSOR_TYPE_OTHER   0xFF
 
-#define FLOWCOUNT_RT_WINDOW   30  // flow count window (for computing real-time flow rate), 30 seconds
+#define FLOWCOUNT_RT_WINDOW   1000  // flow count divisor (for computing real-time flow rate)
 
 /** Reboot cause */
 #define REBOOT_CAUSE_NONE   0
@@ -151,6 +165,12 @@ typedef unsigned long ulong;
 #define DEFAULT_OTC_TOKEN_LENGTH   32
 #define DEFAULT_DEVICE_NAME       "My OpenSprinkler"
 #define DEFAULT_EMPTY_STRING      ""
+#define DEFAULT_UNDERCURRENT_THRESHOLD 100 // in mA
+#define DEFAULT_OVERCURRENT_LIMIT 1200 // in mA
+#define OVERCURRENT_INRUSH_EXTRA   600 // in mA, extra margin for inrush
+#define OVERCURRENT_DC_EXTRA      1200 // in mA, extra margin for DC controller
+#define DEFAULT_LATCH_BOOST_VOLTAGE  9 // default latch boost voltage in volt
+#define DEFAULT_TARGET_PD_VOLTAGE   75 // default target voltage (unit: 100mV, so 75 means 7500mV ot 7.5V)
 
 #if (defined(__AVR_ATmega1284P__) || defined(__AVR_ATmega1284__))
 	#define OS_AVR
@@ -164,7 +184,7 @@ typedef unsigned long ulong;
 enum {
 	WEATHER_METHOD_MANUAL = 0,
 	WEATHER_METHOD_ZIMMERMAN,
-	WEATHER_METHOD_AUTORAINDELY,
+	WEATHER_METHOD_AUTORAINDELAY,
 	WEATHER_METHOD_ETO,
 	WEATHER_METHOD_MONTHLY,
 	NUM_WEATHER_METHODS
@@ -255,12 +275,12 @@ enum {
 	IOPT_SUBNET_MASK3,
 	IOPT_SUBNET_MASK4,
 	IOPT_FORCE_WIRED,
-	IOPT_RESERVE_1,
-	IOPT_RESERVE_2,
-	IOPT_RESERVE_3,
-	IOPT_RESERVE_4,
-	IOPT_RESERVE_5,
-	IOPT_RESERVE_6,
+	IOPT_LATCH_ON_VOLTAGE,
+	IOPT_LATCH_OFF_VOLTAGE,
+	IOPT_NOTIF2_ENABLE,
+	IOPT_I_MIN_THRESHOLD,
+	IOPT_I_MAX_LIMIT,
+	IOPT_TARGET_PD_VOLTAGE,
 	IOPT_RESERVE_7,
 	IOPT_RESERVE_8,
 	IOPT_WIFI_MODE, //ro
@@ -344,6 +364,8 @@ enum {
 	#define digitalReadExt    digitalRead
 	#define digitalWriteExt   digitalWrite
 
+	#define USE_DISPLAY
+	#define USE_LCD
 #elif defined(ESP8266) // for ESP8266
 
 	#define OS_HW_VERSION    (OS_HW_VERSION_BASE+30)
@@ -355,12 +377,15 @@ enum {
 	#define EXP_I2CADDR_BASE 0x24 // base of expander I2C address
 	#define LCD_I2CADDR      0x3C // 128x64 OLED display I2C address
 	#define EEPROM_I2CADDR   0x50 // 24C02 EEPROM I2C address
+	#define CH224_I2CADDR    0x22 // CH224A/Q I2C address
 
-	#define PIN_CURR_SENSE    A0
+	#define PIN_CURR_SENSE    A0    // current sensing pin
+	#define PIN_LATCH_VOLT_SENSE A0 // latch voltage sensing pin
 	#define PIN_FREE_LIST     {} // no free GPIO pin at the moment
 	#define ETHER_BUFFER_SIZE   2048
 
 	#define PIN_ETHER_CS       16 // Ethernet CS (chip select pin) is 16 on OS 3.2 and above
+	#define ETHER_SPI_CLOCK    10000000L // SPI clock for Ethernet (e.g. 10MHz)
 
 	/* To accommodate different OS30 versions, we use software defines pins */
 	extern unsigned char PIN_BUTTON_1;
@@ -425,6 +450,10 @@ enum {
 	#define V2_PIN_LATCH_COMK    IOEXP_PIN+15 // latch COM- (cathode)
 	#define V2_PIN_SENSOR1       3  // sensor 1
 	#define V2_PIN_SENSOR2       10 // sensor 2
+	#define V2_PIN_BOOST_SEL     IOEXP_PIN+8
+
+	#define USE_DISPLAY
+	#define USE_SSD1306
 
 #elif defined(OSPI) // for OSPi
 
@@ -437,27 +466,18 @@ enum {
 	#define PIN_SENSOR1       14
 	#define PIN_SENSOR2       23
 	#define PIN_RFTX          15    // RF transmitter pin
-	//#define PIN_BUTTON_1      23    // button 1
-	//#define PIN_BUTTON_2      24    // button 2
-	//#define PIN_BUTTON_3      25    // button 3
+	#define PIN_BUTTON_1      24    // button 1
+	#define PIN_BUTTON_2      18    // button 2
+	#define PIN_BUTTON_3      10    // button 3
 
-	#define PIN_FREE_LIST       {5,6,7,8,9,10,11,12,13,16,18,19,20,21,23,24,25,26}  // free GPIO pins
+	#define PIN_FREE_LIST       {5,6,7,8,9,11,12,13,16,19,20,21,23,25,26}  // free GPIO pins
 	#define ETHER_BUFFER_SIZE   16384
 
-#elif defined(OSBO) // for OSBo
+	#define SDA 0
+	#define SCL 0
 
-	#define OS_HW_VERSION    OSBO_HW_VERSION_BASE
-	// these are gpio pin numbers, refer to
-	// https://github.com/mkaczanowski/BeagleBoneBlack-GPIO/blob/master/GPIO/GPIOConst.cpp
-	#define PIN_SR_LATCH      60    // P9_12, shift register latch pin
-	#define PIN_SR_DATA       30    // P9_11, shift register data pin
-	#define PIN_SR_CLOCK      31    // P9_13, shift register clock pin
-	#define PIN_SR_OE         50    // P9_14, shift register output enable pin
-	#define PIN_SENSOR1       48
-	#define PIN_RFTX          51    // RF transmitter pin
-
-	#define PIN_FREE_LIST     {38,39,34,35,45,44,26,47,27,65,63,62,37,36,33,32,61,86,88,87,89,76,77,74,72,73,70,71}
-	#define ETHER_BUFFER_SIZE   16384
+	#define USE_DISPLAY
+	#define USE_SSD1306
 
 #else // for demo / simulation
 	// use fake hardware pins
@@ -496,7 +516,12 @@ enum {
 
 #else
 
+	#if defined(ARDUINO)
+	// work-around for PIN_SENSOR1 on OS3.2 and above
+	#define DEBUG_BEGIN(x)   {Serial.begin(115200); Serial.end();}
+	#else
 	#define DEBUG_BEGIN(x)   {}
+	#endif
 	#define DEBUG_PRINT(x)   {}
 	#define DEBUG_PRINTLN(x) {}
 	#define DEBUG_PRINTF(x, ...)  {}
@@ -513,8 +538,9 @@ enum {
 	#define PSTR(x)      x
 	#define F(x)         x
 	#define strcat_P     strcat
-	#define strncat_P     strncat
+	#define strncat_P    strncat
 	#define strcpy_P     strcpy
+	#define memcpy_P     memcpy
 	#define snprintf_P    snprintf
 	#include<string>
 	#define String       string
