@@ -100,7 +100,7 @@ const char *user_agent_string = "OpenSprinkler/" TOSTRING(OS_FW_VERSION) "#" TOS
 // to minimize conflicting events
 #define NTP_SYNC_INTERVAL       86413L  // NTP sync interval (in seconds)
 #define CHECK_NETWORK_INTERVAL  601     // Network checking timeout (in seconds)
-#define CHECK_WEATHER_TIMEOUT   21613L  // Weather check interval (in seconds)
+#define CHECK_WEATHER_TIMEOUT   600  // Weather check interval (in seconds)
 #define LCD_BACKLIGHT_TIMEOUT     15    // LCD backlight timeout (in seconds))
 #define PING_TIMEOUT              200   // Ping test timeout (in ms)
 #define UI_STATE_MACHINE_INTERVAL 50    // how often does ui_state_machine run (in ms)
